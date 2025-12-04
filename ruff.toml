@@ -1,0 +1,35 @@
+# Ruff configuration for photo-tooter
+
+# Target Python version
+target-version = "py312"
+
+# What to lint
+src = ["src", "tests"]
+
+# Line length (used by both linting and formatting)
+line-length = 88
+
+# Enable Ruff's formatter (used via `ruff format`)
+[format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+skip-magic-trailing-comma = false
+docstring-code-format = true
+
+[lint]
+select = [
+  "F",   # pyflakes
+  "E",   # pycodestyle errors
+  "W",   # pycodestyle warnings
+  "I",   # isort (import sorting)
+  "B",   # flake8-bugbear
+  "UP",  # pyupgrade
+]
+ignore = [
+  # Add any codes you decide are too noisy here
+]
+
+[lint.per-file-ignores]
+# Allow unused imports in package __init__ if you want to re-export symbols there
+"src/photo_tooter/__init__.py" = ["F401"]

@@ -1,0 +1,82 @@
+# -------------------------
+# Python
+# -------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# C extensions
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# PyInstaller / packaging
+*.spec
+
+# Byte-compiled / cached
+*.cache
+*.pytest_cache/
+.python-version
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Coverage / testing
+.coverage
+coverage.xml
+htmlcov/
+
+# Logs
+*.log
+
+# -------------------------
+# macOS / Finder
+# -------------------------
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# macOS thumbnail cache files
+._*
+
+# Extra macOS files
+.Spotlight-V100
+.Trashes
+
+# -------------------------
+# Editors / IDEs
+# -------------------------
+# VS Code
+.vscode/
+.vscode-settings/
+
+# PyCharm / JetBrains
+.idea/
+
+# Vim
+*.swp
+*.swo
+
+# Emacs
+*~
+
+
+# -------------------------
+# Project-specific
+# -------------------------
+# Config files created by photo-tooter
+# (we don't want to commit your access token!)
+~/.config/photo-tooter/
+
+# Local test images or scratch files
+scratch/
+test_images/

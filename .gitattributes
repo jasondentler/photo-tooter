@@ -1,0 +1,25 @@
+# Normalize line endings to LF in the repo
+* text=auto eol=lf
+
+# Treat common binary types correctly
+*.jpg  binary
+*.jpeg binary
+*.png  binary
+*.heic binary
+*.heif binary
+*.tif  binary
+*.tiff binary
+*.webp binary
+
+# GitHub Linguist: mark tests as not "primary" language
+tests/** linguist-documentation
+
+# Exclude some files from source archives (git archive, GitHub's download zip)
+.github/**          export-ignore
+tests/**            export-ignore
+scratch/**          export-ignore
+test_images/**      export-ignore
+
+# Common documentation and meta files can be excluded from `sdist`-style archives if you like
+.gitattributes      export-ignore
+.gitignore          export-ignore
