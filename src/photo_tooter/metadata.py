@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import subprocess
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -101,6 +102,9 @@ def run_exiftool(path: Path) -> dict[str, Any]:
                 "-Description",
                 "-AltTextAccessibility",
                 "-ExtDescrAccessibility",
+                "-Subject",
+                "-WeightedFlatSubject",
+                "-HierarchicalSubject",
                 str(path),
             ],
             capture_output=True,
@@ -135,19 +139,24 @@ def _extract_lang_alt(value: Any) -> str | None:
     return None
 
 
-def extract_metadata(path: Path) -> tuple[str | None, str | None, str | None]:
+def extract_metadata(
+    path: Path,
+) -> tuple[str | None, str | None, str | None, list[str]]:
     meta = run_exiftool(path)
 
+    # Title
     title = meta.get("Title")
     if isinstance(title, list):
         title = title[0]
     title = title.strip() if isinstance(title, str) else None
 
+    # Description
     description = meta.get("Description")
     if isinstance(description, list):
         description = description[0]
     description = description.strip() if isinstance(description, str) else None
 
+    # Alt text
     alt_raw = (
         meta.get("AltTextAccessibility")
         or meta.get("Alt Text Accessibility")
@@ -155,7 +164,10 @@ def extract_metadata(path: Path) -> tuple[str | None, str | None, str | None]:
     )
     alt_text = _extract_lang_alt(alt_raw) or description
 
-    return title, description, alt_text
+    # Hashtags from Subject / WeightedFlatSubject
+    hashtags = build_hashtags_from_exif_subject(meta)
+
+    return title, description, alt_text, hashtags
 
 
 def build_default_status_text(title, description):
@@ -168,6 +180,135 @@ def build_default_status_text(title, description):
     raise RuntimeError(
         "No title or description found in metadata. Use --text to specify manually."
     )
+
+
+# ----------------- Hashtags ----------------- #
+
+GENERIC_KEYWORDS = {
+    "photography",
+    "photo",
+    "photos",
+    "image",
+    "images",
+    "picture",
+    "pictures",
+}
+
+
+def _split_subject_values(value: Any) -> list[str]:
+    """
+    Normalize EXIF Subject / WeightedFlatSubject into a list of strings.
+    Handles list values and comma-separated strings.
+    """
+    if value is None:
+        return []
+    if isinstance(value, list):
+        parts: list[str] = []
+        for item in value:
+            if isinstance(item, str):
+                # Some tools already store each subject as its own string.
+                parts.append(item.strip())
+        return parts
+    if isinstance(value, str):
+        # Comma-separated
+        return [p.strip() for p in value.split(",") if p.strip()]
+    return []
+
+
+def _clean_subject_keyword(raw: str) -> str | None:
+    """
+    Clean a single subject keyword:
+    - Strip whitespace
+    - Remove parenthetical species names
+    - Drop purely generic or too-short tokens
+    Returns None if the keyword should be ignored.
+    """
+    s = raw.strip()
+    if not s:
+        return None
+
+    # Remove everything in parentheses:
+    # "Saguaro cactus (Carnegiea gigantea)" → "Saguaro cactus"
+    s = re.sub(r"\s*\(.*?\)", "", s).strip()
+    if not s:
+        return None
+
+    lower = s.lower()
+    if lower in GENERIC_KEYWORDS:
+        return None
+
+    # Very short single tokens are usually not helpful (#at, #in, etc.)
+    if " " not in s and len(s) <= 2:
+        return None
+
+    return s
+
+
+def _to_hashtag(keyword: str) -> str:
+    """
+    Convert a cleaned keyword string to a CamelCase hashtag:
+    - Remove punctuation ("Mt. Ranier" -> "Mt Ranier")
+    - Collapse spaces
+    - CamelCase words
+    """
+    # Remove punctuation that breaks hashtags
+    cleaned = re.sub(r"[^\w\s]", " ", keyword)  # Replace punctuation with space
+
+    # Normalize whitespace
+    words = cleaned.split()
+    if not words:
+        return ""
+
+    camel = "".join(w.capitalize() for w in words)
+    return f"#{camel}"
+
+
+def build_hashtags_from_exif_subject(
+    meta: dict[str, Any], max_tags: int = 10
+) -> list[str]:
+    """
+    Build a list of hashtags from EXIF Subject / WeightedFlatSubject fields.
+    Preference order:
+    1. WeightedFlatSubject (most important first)
+    2. Subject (fill in any missing ones)
+    """
+    weighted_raw = meta.get("WeightedFlatSubject")
+    subject_raw = meta.get("Subject")
+
+    weighted_list = _split_subject_values(weighted_raw)
+    subject_list = _split_subject_values(subject_raw)
+
+    # Preserve order: start with weighted, then add non-duplicates from Subject
+    candidates: list[str] = []
+    seen_raw: set[str] = set()
+
+    for src in (weighted_list, subject_list):
+        for item in src:
+            key = item.strip()
+            if not key or key in seen_raw:
+                continue
+            seen_raw.add(key)
+            candidates.append(key)
+
+    hashtags: list[str] = []
+    seen_tags: set[str] = set()
+
+    for raw in candidates:
+        cleaned = _clean_subject_keyword(raw)
+        if cleaned is None:
+            continue
+
+        tag = _to_hashtag(cleaned)
+        if tag.lower() in seen_tags:
+            continue
+
+        seen_tags.add(tag.lower())
+        hashtags.append(tag)
+
+        if len(hashtags) >= max_tags:
+            break
+
+    return hashtags
 
 
 # ----------------- Image collection ----------------- #
@@ -203,16 +344,13 @@ def post_single_image(
     visibility: str,
     scheduled_at: datetime | None = None,
 ) -> str:
-    """
-    Post (or schedule) a single image as its own toot.
-    Returns the toot URL if Mastodon provides one, otherwise an empty string.
-
-    Any Mastodon API issues are wrapped as RuntimeError so the caller
-    can handle them and continue with the next image.
-    """
-    title, description, alt_text = extract_metadata(path)
+    title, description, alt_text, hashtags = extract_metadata(path)
 
     status_text = text_override or build_default_status_text(title, description)
+
+    if hashtags:
+        # Append hashtags on their own line at the end
+        status_text = f"{status_text}\n\n{' '.join(hashtags)}"
 
     # Upload media
     try:
@@ -339,3 +477,24 @@ def post_images_command(inputs, text_override, visibility):
         )
     else:
         print(f"\n🎉 All {total} image(s) posted/scheduled successfully.")
+
+
+# ----------------- Unschedule All ----------------- #
+
+
+def unschedule_all_command():
+    mastodon = build_mastodon_client()
+    scheduled = mastodon.scheduled_statuses()
+
+    if not scheduled:
+        print("No scheduled toots found.")
+        return
+
+    print(f"Found {len(scheduled)} scheduled toots. Deleting...")
+
+    for item in scheduled:
+        sid = item["id"]
+        mastodon.scheduled_status_delete(sid)
+        print(f"Deleted scheduled toot ID {sid}")
+
+    print("All scheduled toots deleted.")

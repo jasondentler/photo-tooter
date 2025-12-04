@@ -1,6 +1,6 @@
 import argparse
 
-from .metadata import configure_command, post_images_command
+from .metadata import configure_command, post_images_command, unschedule_all_command
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -51,6 +51,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
             visibility=args.visibility,
         )
     )
+
+    unsched = subparsers.add_parser(
+        "unschedule-all", help="Delete all scheduled toots from your Mastodon account."
+    )
+    unsched.set_defaults(func=lambda args: unschedule_all_command())
 
     return parser
 
